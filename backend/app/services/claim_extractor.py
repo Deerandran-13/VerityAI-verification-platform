@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Any
+
+
+class ClaimExtractor:
+    """Agent 1: Extracts atomic factual claims from AI-generated text or documents.
+    
+    Separates verifiable factual assertions from subjective opinions,
+    extracts key entities, numerical figures, and temporal markers,
+    and prioritizes the most information-dense factual statements.
+    """
+
+    MAX_CLAIMS_PER_RUN = 10
+
+    def __init__(self) -> None:
+        self.sentence_regex = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
+        # Markers indicating subjective opinion rather than verifiable fact
+        self.opinion_patterns = [
+            r"\b(i think|i believe|in my opinion|in my view|arguably|probably|perhaps)\b",
+            r"\b(it seems|it feels like|beautiful|wonderful|terrible|superior|inferior)\b",
+            r"\b(might be|could possibly be|should consider|best overall|personal favorite)\b",
+        ]
+        # Regex for dates, versions, and numerical values
+        self.date_regex = re.compile(r"\b((?:19|20)\d{2}|january|february|march|april|may|june|july|august|september|october|november|december)\b", re.IGNORECASE)
+        self.version_regex = re.compile(r"\bv?\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?\b")
+        self.number_regex = re.compile(r"\b(?:\$|€|£)?\d+(?:,\d{3})*(?:\.\d+)?%?\b")
+
+    async def extract_claims(self, text: str) -> list[dict[str, Any]]:
+        """Splits text into atomic claims, scores them for factual density, and selects top claims."""
+        if not text or not text.strip():
+            return []
+
+        # Filter out markdown headers, table separators, and empty lines
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        filtered_lines = [l for l in lines if not l.startswith("#") and not l.startswith("---") and not l.startswith("===")]
+        normalized_text = " ".join(filtered_lines)
+
+        raw_sentences = [
+            s.strip()
+            for s in self.sentence_regex.split(normalized_text)
+            if s.strip()
+        ]
+
+        candidates: list[dict[str, Any]] = []
+        for idx, sentence in enumerate(raw_sentences):
+            # Split compound conjunctions into atomic clauses
+            sub_clauses = re.split(r";|\s+(?:and\s+also|moreover|furthermore)\s+", sentence)
+            for clause in sub_clauses:
+                clause = clause.strip()
+                # Ignore very short or trivial fragments
+                if len(clause) < 15 or len(clause.split()) < 3:
+                    continue
+
+                # Detect if subjective opinion
+                is_opinion = any(re.search(pat, clause, re.IGNORECASE) for pat in self.opinion_patterns)
+                if is_opinion:
+                    continue
+
+                # Detect time-sensitivity & historical markers
+                is_time_sensitive = bool(
+                    re.search(
+                        r"\b(currently|today|now|latest|recent|as of|v\d+|\d{4}|active|status|pricing|costs?)\b",
+                        clause,
+                        re.IGNORECASE,
+                    )
+                )
+                is_historical = bool(
+                    re.search(
+                        r"\b(in (?:19|20)\d{2}|released in|founded in|originally|historically|prior to|formerly)\b",
+                        clause,
+                        re.IGNORECASE,
+                    )
+                )
+                is_vague = len(clause.split()) < 4 or bool(re.search(r"\b(things|stuff|various|some people)\b", clause, re.IGNORECASE))
+
+                # Extract dates, versions, numbers
+                dates = self.date_regex.findall(clause)
+                versions = self.version_regex.findall(clause)
+                numbers = self.number_regex.findall(clause)
+
+                # Density scoring for sorting
+                density_score = 0
+                if versions:
+                    density_score += 3
+                if numbers:
+                    density_score += 2
+                if dates:
+                    density_score += 2
+                if is_time_sensitive or is_historical:
+                    density_score += 1
+                if not is_vague:
+                    density_score += 1
+
+                candidates.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "claim_text": clause,
+                        "original_sentence": sentence,
+                        "position_in_text": idx,
+                        "is_time_sensitive": is_time_sensitive,
+                        "is_historical": is_historical,
+                        "is_vague": is_vague,
+                        "is_opinion": False,
+                        "dates": list(set(dates)),
+                        "versions": list(set(versions)),
+                        "numbers": list(set(numbers)),
+                        "density_score": density_score,
+                    }
+                )
+
+        # Deduplicate candidates with identical text
+        seen_texts = set()
+        deduped = []
+        for c in candidates:
+            norm = c["claim_text"].lower().strip()
+            if norm not in seen_texts:
+                seen_texts.add(norm)
+                deduped.append(c)
+
+        # Sort by density score descending and return up to MAX_CLAIMS_PER_RUN
+        deduped.sort(key=lambda x: x["density_score"], reverse=True)
+        return deduped[: self.MAX_CLAIMS_PER_RUN]
