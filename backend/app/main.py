@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
     auth,
@@ -77,9 +79,18 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
+FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+if (FRONTEND_DIST_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST_DIR / "assets"), name="assets")
+
+
 @app.get("/", tags=["root"])
-async def root() -> dict[str, str]:
-    """Root entrypoint with API documentation reference."""
+async def root():
+    """Serve frontend SPA if built, otherwise return API root metadata."""
+    index_file = FRONTEND_DIST_DIR / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file)
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
@@ -87,4 +98,16 @@ async def root() -> dict[str, str]:
         "docs": "/docs",
         "health": "/api/v1/health",
     }
+
+
+if (FRONTEND_DIST_DIR / "index.html").is_file():
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        """Serve static files from frontend/dist or fall back to index.html for SPA routes."""
+        if full_path.startswith(("api/", "docs", "redoc", "openapi.json")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = (FRONTEND_DIST_DIR / full_path).resolve()
+        if full_path and candidate.is_file() and candidate.is_relative_to(FRONTEND_DIST_DIR.resolve()):
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")
 
