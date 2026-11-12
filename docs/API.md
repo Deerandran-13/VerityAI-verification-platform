@@ -140,3 +140,13 @@ Retrieves in-app drift alerts and system notifications.
 - `GET /history`: Paginated verification jobs history with search and filtering.
 - `GET /dashboard/stats`: Platform-wide verification analytics and freshness metrics.
 - `GET /drift/cases`: Curated benchmarks and database-tracked knowledge drift case studies.
+
+---
+
+### Authentication, Async Progress & PDF Export (v1)
+
+- `POST /api/v1/auth/token`: Exchange a valid `PUBLIC_API_KEYS` value (`{"api_key": "...", "client_name": "..."}`) for a signed HS256 Bearer JWT.
+- `GET /api/v1/auth/me`: Inspect current authentication identity (`X-API-Key` or `Authorization: Bearer <token>`).
+- `POST /api/v1/verify` (`async_mode: true`): Enqueue verification in a background task and return immediately.
+- `GET /api/v1/verify/{job_id}/status`: Poll live `status`, `progress_percent` (0–100), and `current_stage`.
+- `GET /api/v1/verify/{job_id}/export?format=pdf`: Generate, persist in `verification_reports`, and download a PDF verification report (`application/pdf`).

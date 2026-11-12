@@ -137,8 +137,14 @@ class DocumentExtractorService:
             doc = docx.Document(io.BytesIO(file_bytes))
             text_parts = []
             for p in doc.paragraphs:
-                if p.text.strip():
-                    text_parts.append(p.text.strip())
+                txt = p.text.strip()
+                if not txt:
+                    continue
+                style_name = getattr(getattr(p, "style", None), "name", "") or ""
+                if style_name.lower().startswith("heading"):
+                    text_parts.append(f"[Section: {txt}]")
+                else:
+                    text_parts.append(txt)
 
             for table in doc.tables:
                 for row in table.rows:

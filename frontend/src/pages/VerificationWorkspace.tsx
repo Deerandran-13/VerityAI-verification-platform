@@ -1,11 +1,13 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { TextInput } from '../components/verification/TextInput';
 import { ModeSelector } from '../components/verification/ModeSelector';
 import { VerificationProgress } from '../components/verification/VerificationProgress';
 import { ErrorMessage } from '../components/common/ErrorMessage';
+import { DemoVideoPlayer } from '../components/tour/DemoVideoPlayer';
 import { useVerification } from '../hooks/useVerification';
 import { submitDocumentVerification, submitUrlVerification } from '../services/api';
+import { TOUR_PRESETS } from '../data/tourPresets';
 import type { VerificationMode } from '../types';
 import { Play, Sparkles, AlertCircle, FileText, Upload, Globe, CheckCircle2 } from 'lucide-react';
 
@@ -20,10 +22,27 @@ export const VerificationWorkspace: React.FC = () => {
   const [historicalDate, setHistoricalDate] = useState<string>('2023-01-01');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [showDemoVideo, setShowDemoVideo] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { startVerification, isLoading, error } = useVerification();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const presetId = searchParams.get('preset');
+    if (!presetId) return;
+    const preset = TOUR_PRESETS.find((p) => p.id === presetId);
+    if (preset) {
+      setInputSource('text');
+      setText(preset.text);
+      setMode(preset.mode);
+      if (preset.historicalDate) {
+        setHistoricalDate(preset.historicalDate);
+      }
+      setValidationError(null);
+    }
+  }, [searchParams]);
 
   const handleStartVerification = async () => {
     setValidationError(null);
@@ -119,9 +138,22 @@ export const VerificationWorkspace: React.FC = () => {
           Verification Workspace
         </h1>
         <p className="text-xs text-slate-400">
-          Verify AI responses, uploaded documents, or live webpages. VerityAI extracts claims, searches Tavily for live evidence, and verifies through Bifrost.
+          Verify AI responses, uploaded documents, or live webpages. VerityAI extracts claims, searches Tavily for live evidence, and verifies through Bifrost.{' '}
+          <Link to="/tour" className="text-cyan-400 hover:text-cyan-300 font-semibold underline-offset-2 hover:underline">
+            New? Take the Judge&apos;s Tour →
+          </Link>
+          {' · '}
+          <button
+            type="button"
+            onClick={() => setShowDemoVideo((v) => !v)}
+            className="text-cyan-300 hover:text-cyan-200 font-semibold underline-offset-2 hover:underline"
+          >
+            {showDemoVideo ? 'Hide Demo Video' : 'Watch 80s Feature Demo'}
+          </button>
         </p>
       </div>
+
+      {showDemoVideo && <DemoVideoPlayer />}
 
       {validationError && (
         <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 flex items-center gap-2.5 text-xs">

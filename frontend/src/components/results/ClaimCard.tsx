@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
-import type { Claim } from '../../types';
+import React, { useEffect, useState } from 'react';
+import type {
+  Claim,
+  ClaimConflictAnalysis,
+  ClaimTimelineResponse,
+  HumanFeedbackItem,
+} from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import {
   ChevronDown,
@@ -9,11 +14,18 @@ import {
   Clock,
   Globe,
   AlertTriangle,
-  ShieldCheck,
   RefreshCw,
   Check,
+  MessageSquarePlus,
+  GitFork,
 } from 'lucide-react';
-import { reverifyClaim } from '../../services/api';
+import {
+  getClaimConflicts,
+  getClaimTimeline,
+  listClaimFeedback,
+  reverifyClaim,
+  submitClaimFeedback,
+} from '../../services/api';
 
 interface ClaimCardProps {
   claim: Claim;
@@ -22,8 +34,49 @@ interface ClaimCardProps {
 
 export const ClaimCard: React.FC<ClaimCardProps> = ({ claim, index }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'conflicts' | 'review'>('overview');
   const [isReverifying, setIsReverifying] = useState<boolean>(false);
   const [reverifiedSuccess, setReverifiedSuccess] = useState<boolean>(false);
+
+  const [timeline, setTimeline] = useState<ClaimTimelineResponse | null>(null);
+  const [conflicts, setConflicts] = useState<ClaimConflictAnalysis | null>(null);
+  const [feedbackList, setFeedbackList] = useState<HumanFeedbackItem[]>([]);
+  const [reviewerEmail, setReviewerEmail] = useState('');
+  const [decision, setDecision] = useState<'correct' | 'incorrect' | 'needs_review'>('needs_review');
+  const [feedbackExplanation, setFeedbackExplanation] = useState('');
+  const [feedbackUrl, setFeedbackUrl] = useState('');
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isExpanded || claim.id.startsWith('c-')) return;
+    if (activeTab === 'timeline' && !timeline) {
+      getClaimTimeline(claim.id).then(setTimeline).catch(() => {});
+    } else if (activeTab === 'conflicts' && !conflicts) {
+      getClaimConflicts(claim.id).then(setConflicts).catch(() => {});
+    } else if (activeTab === 'review') {
+      listClaimFeedback(claim.id).then(setFeedbackList).catch(() => {});
+    }
+  }, [isExpanded, activeTab, claim.id]);
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewerEmail.trim() || claim.id.startsWith('c-')) return;
+    setFeedbackMsg(null);
+    try {
+      const created = await submitClaimFeedback(claim.id, {
+        reviewer_email: reviewerEmail.trim(),
+        decision,
+        explanation: feedbackExplanation.trim() || undefined,
+        supporting_url: feedbackUrl.trim() || undefined,
+      });
+      setFeedbackList((prev) => [created, ...prev]);
+      setFeedbackExplanation('');
+      setFeedbackUrl('');
+      setFeedbackMsg('Feedback logged for audit. Original verdict remains unchanged until verified.');
+    } catch {
+      setFeedbackMsg('Failed to submit feedback.');
+    }
+  };
 
   const handleReverify = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -72,6 +125,16 @@ export const ClaimCard: React.FC<ClaimCardProps> = ({ claim, index }) => {
               <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px]">
                 {claim.category ? claim.category.replace('_', ' ').toUpperCase() : 'GENERAL FACT'}
               </span>
+              {claim.page_number != null && (
+                <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 font-mono text-[10px]">
+                  Page {claim.page_number}
+                </span>
+              )}
+              {claim.section_title && (
+                <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25 font-mono text-[10px] truncate max-w-[200px]">
+                  § {claim.section_title}
+                </span>
+              )}
               {claim.is_time_sensitive && (
                 <span className="flex items-center gap-1 text-[10px] text-amber-400 font-medium">
                   <Clock className="w-3 h-3" /> Time-Sensitive
@@ -85,6 +148,14 @@ export const ClaimCard: React.FC<ClaimCardProps> = ({ claim, index }) => {
               {isModerateRisk && (
                 <span className="flex items-center gap-1 text-[10px] text-amber-300 font-medium px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
                   <AlertTriangle className="w-3 h-3" /> Knowledge Drift
+                </span>
+              )}
+              {claim.uncertainty_level && claim.uncertainty_level !== 'low' && (
+                <span
+                  className="flex items-center gap-1 text-[10px] text-purple-300 font-medium px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/25 capitalize"
+                  title={claim.uncertainty_reason || 'Evidence uncertainty'}
+                >
+                  Uncertainty: {claim.uncertainty_level}
                 </span>
               )}
             </div>
@@ -116,6 +187,192 @@ export const ClaimCard: React.FC<ClaimCardProps> = ({ claim, index }) => {
       {/* Expanded Details */}
       {isExpanded && (
         <div className="p-5 border-t border-slate-800/80 bg-slate-950/40 space-y-4 text-xs animate-fadeIn">
+          {/* Sub-navigation tabs */}
+          <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+            {[
+              { id: 'overview', label: 'Overview & Evidence' },
+              { id: 'timeline', label: 'Evidence Timeline' },
+              { id: 'conflicts', label: 'Fact Conflicts' },
+              { id: 'review', label: 'Human Review' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Uncertainty Quantification Box */}
+          {(claim.uncertainty_reason || claim.evidence_strength !== undefined) && activeTab === 'overview' && (
+            <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <span className="font-bold text-purple-300 uppercase tracking-wider block">
+                  Uncertainty & Evidence Strength ({claim.uncertainty_level || 'low'})
+                </span>
+                {claim.uncertainty_reason && (
+                  <p className="text-slate-300">{claim.uncertainty_reason}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-4 text-right font-mono shrink-0">
+                <div>
+                  <div className="text-[10px] text-slate-400">Model Conf.</div>
+                  <div className="text-cyan-300 font-bold">{claim.confidence_score ?? '—'}%</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400">Evidence Str.</div>
+                  <div className="text-purple-300 font-bold">
+                    {claim.evidence_strength != null ? `${Math.round(claim.evidence_strength)}%` : '—'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'timeline' && (
+            <div className="space-y-3">
+              {timeline ? (
+                <>
+                  {timeline.fact_changes.length > 0 && (
+                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200">
+                      <strong className="block mb-1">Fact Changes Over Time:</strong>
+                      {timeline.fact_changes.map((fc, i) => (
+                        <div key={i}>• {fc}</div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-2 border-l-2 border-slate-700 pl-4">
+                    {timeline.timeline.map((ev) => (
+                      <div key={ev.id} className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <div className="flex justify-between text-slate-400 mb-1">
+                          <span className="font-mono text-cyan-300">{new Date(ev.timestamp).toLocaleDateString()}</span>
+                          <span className="uppercase text-[10px]">{ev.event_type === 'version_snapshot' ? `Version #${ev.version_number}` : ev.stance}</span>
+                        </div>
+                        <div className="text-slate-200 font-medium">{ev.source_title || ev.change_reason || 'Snapshot'}</div>
+                        {ev.content_snippet && <p className="text-slate-400 mt-1">{ev.content_snippet}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-slate-400">Timeline is available for persisted verification jobs.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'conflicts' && (
+            <div className="space-y-3">
+              {conflicts ? (
+                <div className="space-y-3">
+                  <p className="text-slate-200 flex items-center gap-1.5">
+                    <GitFork className="w-3.5 h-3.5 text-amber-400" />
+                    {conflicts.summary}
+                  </p>
+                  {conflicts.conflict_reasons.length > 0 && (
+                    <ul className="list-disc pl-5 text-amber-300 space-y-0.5">
+                      {conflicts.conflict_reasons.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                      <div className="font-semibold text-emerald-400 mb-1">Supporting ({conflicts.supporting_side.length})</div>
+                      {conflicts.supporting_side.map((s, i) => (
+                        <div key={i} className="text-slate-300 mb-1">• {s.source_domain}: {s.snippet?.slice(0, 110)}</div>
+                      ))}
+                    </div>
+                    <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+                      <div className="font-semibold text-red-400 mb-1">Contradicting ({conflicts.contradicting_side.length})</div>
+                      {conflicts.contradicting_side.map((c, i) => (
+                        <div key={i} className="text-slate-300 mb-1">• {c.source_domain}: {c.snippet?.slice(0, 110)}</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-400">Conflict analysis is available for persisted verification jobs.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'review' && (
+            <div className="space-y-4">
+              <form onSubmit={handleFeedbackSubmit} className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
+                <div className="font-bold text-slate-200 flex items-center gap-1.5">
+                  <MessageSquarePlus className="w-3.5 h-3.5 text-cyan-400" /> Submit Human Review Feedback
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Feedback is recorded in the audit log and evaluated for quality review; unverified feedback never auto-changes a verdict.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="email"
+                    required
+                    placeholder="Reviewer email"
+                    value={reviewerEmail}
+                    onChange={(e) => setReviewerEmail(e.target.value)}
+                    className="bg-[#0a0e1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white"
+                  />
+                  <select
+                    value={decision}
+                    onChange={(e) => setDecision(e.target.value as any)}
+                    className="bg-[#0a0e1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white"
+                  >
+                    <option value="correct">Verdict is Correct</option>
+                    <option value="incorrect">Verdict is Incorrect</option>
+                    <option value="needs_review">Requires Further Review</option>
+                  </select>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Explanation or reviewer rationale"
+                  value={feedbackExplanation}
+                  onChange={(e) => setFeedbackExplanation(e.target.value)}
+                  className="w-full bg-[#0a0e1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white"
+                />
+                <input
+                  type="url"
+                  placeholder="Supporting evidence URL (optional)"
+                  value={feedbackUrl}
+                  onChange={(e) => setFeedbackUrl(e.target.value)}
+                  className="w-full bg-[#0a0e1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold"
+                >
+                  Log Feedback
+                </button>
+                {feedbackMsg && <p className="text-emerald-300 text-[11px]">{feedbackMsg}</p>}
+              </form>
+
+              {feedbackList.length > 0 && (
+                <div className="space-y-2">
+                  <div className="font-semibold text-slate-400 uppercase text-[10px]">Feedback Audit History</div>
+                  {feedbackList.map((f) => (
+                    <div key={f.id} className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                      <div className="flex justify-between text-slate-400">
+                        <span>{f.reviewer_email} • <strong className="text-cyan-300">{f.decision}</strong></span>
+                        <span>{new Date(f.created_at).toLocaleString()}</span>
+                      </div>
+                      {f.explanation && <p className="text-slate-300 mt-1">{f.explanation}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'overview' && (
+          <>
           {/* Explanation */}
           {claim.explanation && (
             <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
@@ -254,6 +511,8 @@ export const ClaimCard: React.FC<ClaimCardProps> = ({ claim, index }) => {
             </div>
           ) : (
             <p className="text-slate-500 italic">No external web evidence attached yet.</p>
+          )}
+          </>
           )}
         </div>
       )}

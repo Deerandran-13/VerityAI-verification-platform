@@ -19,6 +19,7 @@ class User(Base):
     )
     hashed_password: Mapped[str] = mapped_column(String(1024), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

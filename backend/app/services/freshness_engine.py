@@ -123,3 +123,72 @@ class FreshnessEngine:
         raw_score = (base * 0.85 + official_boost) * breadth_multiplier * 100.0
         return round(max(0.0, min(100.0, raw_score)), 2)
 
+    def quantify_uncertainty(
+        self,
+        evidence_count: int,
+        supporting_count: int,
+        contradicting_count: int,
+        avg_quality_score: float,
+        model_confidence: float,
+        has_outdated_signals: bool = False,
+        is_vague_claim: bool = False,
+    ) -> dict[str, Any]:
+        """Feature 5: Uncertainty Quantification distinguishing model confidence from evidence strength."""
+        reasons: list[str] = []
+
+        if evidence_count == 0:
+            return {
+                "evidence_strength": 0.0,
+                "uncertainty_score": 95.0,
+                "uncertainty_level": "high",
+                "uncertainty_reason": "No retrieved web evidence; cannot reach a definitive conclusion (insufficient evidence).",
+                "recommend_insufficient_evidence": True,
+            }
+
+        # Evidence strength depends on breadth, quality, and directional clarity
+        breadth = min(1.0, evidence_count / 4.0)
+        consensus_margin = abs(supporting_count - contradicting_count) / max(evidence_count, 1)
+        evidence_strength = round(
+            max(0.0, min(100.0, (avg_quality_score * 0.55) + (breadth * 25.0) + (consensus_margin * 20.0))),
+            1,
+        )
+
+        uncertainty = 100.0 - evidence_strength
+        if supporting_count > 0 and contradicting_count > 0:
+            uncertainty = min(100.0, uncertainty + 18.0)
+            reasons.append(
+                f"Conflicting sources ({supporting_count} supporting vs. {contradicting_count} contradicting)."
+            )
+        if evidence_count < 2:
+            uncertainty = min(100.0, uncertainty + 15.0)
+            reasons.append("Limited independent source coverage (fewer than 2 sources).")
+        if has_outdated_signals:
+            uncertainty = min(100.0, uncertainty + 12.0)
+            reasons.append("Temporal/version drift signals indicate facts may have changed.")
+        if is_vague_claim:
+            uncertainty = min(100.0, uncertainty + 12.0)
+            reasons.append("Claim phrasing is ambiguous or lacks concrete qualifiers.")
+        if abs(model_confidence - evidence_strength) > 25.0:
+            reasons.append(
+                f"Model confidence ({round(model_confidence, 1)}%) diverges from underlying evidence strength ({evidence_strength}%)."
+            )
+
+        uncertainty_score = round(max(5.0, min(98.0, uncertainty)), 1)
+        if uncertainty_score >= 60.0:
+            level = "high"
+        elif uncertainty_score >= 30.0:
+            level = "moderate"
+        else:
+            level = "low"
+
+        if not reasons:
+            reasons.append("Multiple consistent, high-quality sources corroborate the assessment.")
+
+        return {
+            "evidence_strength": evidence_strength,
+            "uncertainty_score": uncertainty_score,
+            "uncertainty_level": level,
+            "uncertainty_reason": " ".join(reasons),
+            "recommend_insufficient_evidence": evidence_count < 2 and evidence_strength < 45.0,
+        }
+

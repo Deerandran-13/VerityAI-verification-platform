@@ -1,6 +1,6 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Logo } from '../common/Logo';
-import { ShieldCheck, Heart } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   return (
@@ -14,19 +14,25 @@ export const Footer: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-6 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-400">
             <a href="#how-it-works" className="hover:text-cyan-400 transition-colors">
               How It Works
             </a>
-            <a href="/workspace" className="hover:text-cyan-400 transition-colors">
+            <Link to="/tour" className="hover:text-cyan-400 transition-colors">
+              Judge&apos;s Tour
+            </Link>
+            <Link to="/trust" className="hover:text-cyan-400 transition-colors">
+              Trust &amp; Security
+            </Link>
+            <Link to="/workspace" className="hover:text-cyan-400 transition-colors">
               Workspace
-            </a>
-            <a href="/analytics" className="hover:text-cyan-400 transition-colors">
+            </Link>
+            <Link to="/analytics" className="hover:text-cyan-400 transition-colors">
               Analytics
-            </a>
-            <a href="/settings" className="hover:text-cyan-400 transition-colors">
+            </Link>
+            <Link to="/settings" className="hover:text-cyan-400 transition-colors">
               Settings
-            </a>
+            </Link>
           </div>
         </div>
 

@@ -210,6 +210,28 @@ export const VerificationResults: React.FC = () => {
             <Search className="w-3.5 h-3.5" />
             <span>Explore Evidence</span>
           </Link>
+          {jobId && (
+            <>
+              <Link
+                to={`/graph?job_id=${jobId}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-cyan-400 text-xs font-semibold transition-colors"
+              >
+                <span>Claim Graph</span>
+              </Link>
+              <Link
+                to={`/compare?job_a=${jobId}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-cyan-400 text-xs font-semibold transition-colors"
+              >
+                <span>Compare</span>
+              </Link>
+              <Link
+                to={`/collaborate?job_id=${jobId}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-cyan-400 text-xs font-semibold transition-colors"
+              >
+                <span>Team Review</span>
+              </Link>
+            </>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -273,6 +295,15 @@ export const VerificationResults: React.FC = () => {
               </a>
               {jobId && (
                 <>
+                  <a
+                    href={`/api/v1/verify/${jobId}/export?format=pdf`}
+                    download
+                    className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-cyan-400 text-xs font-semibold transition-colors"
+                    title="Download verification report as PDF"
+                  >
+                    <Download className="w-3.5 h-3.5 text-rose-400" />
+                    <span>PDF</span>
+                  </a>
                   <a
                     href={`/api/v1/verify/${jobId}/export?format=csv`}
                     download

@@ -113,6 +113,7 @@ async def ensure_tables_exist() -> None:
 
     try:
         import app.models.claim
+        import app.models.collaboration
         import app.models.evidence
         import app.models.notification
         import app.models.user
@@ -125,6 +126,29 @@ async def ensure_tables_exist() -> None:
                     await conn.execute(text("PRAGMA busy_timeout=60000;"))
                     await conn.execute(text("PRAGMA synchronous=NORMAL;"))
                 await conn.run_sync(Base.metadata.create_all)
+                # Idempotent column migrations for existing SQLite/PostgreSQL schemas
+                migrations = [
+                    ("claims", "page_number", "INTEGER"),
+                    ("claims", "section_title", "VARCHAR(255)"),
+                    ("claims", "evidence_strength", "FLOAT"),
+                    ("claims", "uncertainty_score", "FLOAT"),
+                    ("claims", "uncertainty_level", "VARCHAR(32)"),
+                    ("claims", "uncertainty_reason", "TEXT"),
+                    ("evidence", "quality_score", "FLOAT"),
+                    ("evidence", "quality_breakdown", "JSON"),
+                    ("evidence", "bias_label", "VARCHAR(64)"),
+                    ("evidence", "bias_confidence", "FLOAT"),
+                    ("evidence", "bias_rationale", "TEXT"),
+                    ("evidence", "conflict_of_interest", "TEXT"),
+                    ("users", "role", "VARCHAR(32) NOT NULL DEFAULT 'member'"),
+                    ("verification_jobs", "progress_percent", "INTEGER NOT NULL DEFAULT 0"),
+                    ("verification_jobs", "current_stage", "VARCHAR(120)"),
+                ]
+                for tbl, col, col_type in migrations:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}"))
+                    except Exception:
+                        pass
             logger.info(f"Database schema verified on {active_db_type}.")
     except Exception as exc:
         logger.error(f"Error ensuring database tables: {exc}")

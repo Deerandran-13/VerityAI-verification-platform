@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any
 import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from app.core.config import settings
 
 logger = logging.getLogger("verityai.services.tavily")
@@ -27,6 +28,18 @@ class TavilyService:
     def _cache_key(self, query: str, search_depth: str, max_results: int) -> str:
         raw = f"{query.lower().strip()}:{search_depth}:{max_results}"
         return hashlib.sha256(raw.encode()).hexdigest()
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4.0),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.TransportError)),
+        reraise=True,
+    )
+    async def _post_search_with_retry(self, payload: dict[str, Any]) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(f"{self.base_url}/search", json=payload)
+            resp.raise_for_status()
+            return resp.json()
 
     async def search(
         self,
@@ -66,13 +79,10 @@ class TavilyService:
             payload["exclude_domains"] = exclude_domains
 
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(f"{self.base_url}/search", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                if use_cache:
-                    self._cache[cache_key] = (time.time(), data)
-                return data
+            data = await self._post_search_with_retry(payload)
+            if use_cache:
+                self._cache[cache_key] = (time.time(), data)
+            return data
         except httpx.HTTPStatusError as http_err:
             logger.error(f"Tavily API HTTP error {http_err.response.status_code}: {http_err.response.text[:200]}")
             return {

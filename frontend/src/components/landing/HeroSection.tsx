@@ -47,6 +47,12 @@ export const HeroSection: React.FC = () => {
             <span>Verify Your AI Answer</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
+          <Link
+            to="/tour"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-semibold text-base transition-colors"
+          >
+            Take the Judge&apos;s Tour
+          </Link>
           <a
             href="#how-it-works"
             className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 rounded-xl border border-slate-700 bg-slate-900/60 hover:bg-slate-800 text-slate-200 font-medium text-base transition-colors"

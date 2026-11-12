@@ -106,3 +106,112 @@ class SourceReliabilityAgent:
             "rationale": " ".join(rationale_points),
         }
 
+    def score_evidence_quality(
+        self,
+        url: str,
+        title: str,
+        snippet: str,
+        domain: str | None = None,
+        publication_date: Any = None,
+        relevance_score: float | None = None,
+        corroboration_count: int = 1,
+    ) -> dict[str, Any]:
+        """Feature 4: Evidence Quality Scoring (distinct from claim correctness)."""
+        import re
+        from datetime import datetime, timezone
+
+        reliability = self.assess_source(url, title, snippet, domain, publication_date)
+        authority = round((reliability["reliability_score"] / 100.0) * 25.0, 1)
+
+        rel_val = relevance_score if relevance_score is not None else 0.75
+        claim_relevance = round(max(0.0, min(1.0, rel_val)) * 25.0, 1)
+
+        # Publication recency (max 20)
+        recency = 11.0
+        recency_note = "Publication date not explicitly provided; moderate baseline assigned."
+        if publication_date:
+            try:
+                if isinstance(publication_date, str):
+                    pub_dt = datetime.fromisoformat(publication_date.replace("Z", "+00:00"))
+                else:
+                    pub_dt = publication_date
+                if pub_dt.tzinfo is None:
+                    pub_dt = pub_dt.replace(tzinfo=timezone.utc)
+                age_days = max(0, (datetime.now(timezone.utc) - pub_dt).days)
+                if age_days <= 180:
+                    recency = 20.0
+                    recency_note = f"Published within {age_days} days (highly recent)."
+                elif age_days <= 730:
+                    recency = 16.0
+                    recency_note = f"Published {age_days // 30} months ago (current)."
+                else:
+                    recency = 10.0
+                    recency_note = f"Published over 2 years ago ({age_days // 365}y); may lag recent changes."
+            except Exception:
+                pass
+
+        # Directness of evidence (max 15): presence of concrete figures, dates, versions, or primary docs
+        has_concrete = bool(re.search(r"\b\d+(?:\.\d+)?%?\b|v?\d+\.\d+", snippet or ""))
+        directness = 14.0 if (reliability["is_primary"] or has_concrete) and len(snippet or "") >= 80 else 9.0
+
+        # Independent corroboration (max 15)
+        corroboration = round(min(1.0, max(1, corroboration_count) / 3.0) * 15.0, 1)
+
+        quality_score = round(authority + claim_relevance + recency + directness + corroboration, 1)
+        breakdown = {
+            "source_authority": {"score": authority, "max": 25.0, "detail": reliability["rationale"]},
+            "claim_relevance": {"score": claim_relevance, "max": 25.0, "detail": f"Semantic/search relevance {round(rel_val * 100)}%."},
+            "publication_recency": {"score": recency, "max": 20.0, "detail": recency_note},
+            "directness": {"score": directness, "max": 15.0, "detail": "Concrete figures/primary specification present." if directness >= 14.0 else "General narrative snippet."},
+            "independent_corroboration": {"score": corroboration, "max": 15.0, "detail": f"Corroborated across {max(1, corroboration_count)} source(s)."},
+            "note": "Evidence quality measures source rigor, not whether the user's claim is true.",
+        }
+        return {"quality_score": quality_score, "quality_breakdown": breakdown}
+
+    def detect_source_bias(
+        self,
+        url: str,
+        title: str,
+        snippet: str,
+        domain: str | None = None,
+    ) -> dict[str, Any]:
+        """Feature 3: Source Bias Detection (never auto-rejects solely on perceived bias)."""
+        import re
+
+        dom = (domain or urlparse(url).netloc).lower().replace("www.", "")
+        combined = f"{title} {snippet} {url}".lower()
+
+        signals: list[str] = []
+        bias_label = "neutral_or_unclear"
+        bias_confidence = 0.25
+        coi: str | None = None
+
+        if re.search(r"\b(sponsored|advertisement|affiliate|promo code|buy now|limited offer|partner content)\b", combined):
+            bias_label = "commercial_promotional"
+            bias_confidence = 0.82
+            signals.append("Promotional or sponsored commercial language detected in content/URL.")
+            coi = "Potential commercial/affiliate incentive."
+        elif re.search(r"(/blog/|/press-release|/newsroom|/pricing|investor\.)", url.lower()):
+            bias_label = "vendor_or_institutional_pr"
+            bias_confidence = 0.68
+            signals.append(f"First-party vendor blog, pricing, or press-release path on {dom}.")
+            coi = f"First-party self-published material by {dom}; may emphasize favorable metrics."
+        elif re.search(r"\b(opinion|editorial|commentary|op-ed|partisan|advocacy)\b", combined):
+            bias_label = "editorial_or_advocacy"
+            bias_confidence = 0.72
+            signals.append("Opinion, commentary, or advocacy framing markers detected.")
+        elif dom.endswith((".gov", ".edu")) or dom in self.official_primary_domains:
+            bias_label = "institutional_official"
+            bias_confidence = 0.55
+            signals.append(f"Official/institutional publisher ({dom}); authoritative but reflects institutional scope.")
+        else:
+            signals.append("No overt promotional, advocacy, or conflict-of-interest markers detected.")
+
+        return {
+            "bias_label": bias_label,
+            "bias_confidence": round(bias_confidence, 2),
+            "bias_rationale": " ".join(signals) + " Potential bias does not automatically invalidate factual accuracy.",
+            "conflict_of_interest": coi,
+            "auto_rejected": False,
+        }
+

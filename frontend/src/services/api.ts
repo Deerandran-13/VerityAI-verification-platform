@@ -130,4 +130,135 @@ export async function getModelDisagreement(jobId: string): Promise<any> {
   return data;
 }
 
+// ---------------------------------------------------------------------------
+// Advanced Intelligence & Collaboration APIs
+// ---------------------------------------------------------------------------
+
+export async function getClaimDependencyGraph(jobId: string): Promise<import('../types').ClaimDependencyGraph> {
+  const { data } = await api.get(`/verify/${jobId}/graph`);
+  return data;
+}
+
+export async function getJobConflicts(jobId: string): Promise<{
+  job_id: string;
+  total_claims: number;
+  conflicted_claims_count: number;
+  claims: import('../types').ClaimConflictAnalysis[];
+}> {
+  const { data } = await api.get(`/verify/${jobId}/conflicts`);
+  return data;
+}
+
+export async function getClaimTimeline(claimId: string): Promise<import('../types').ClaimTimelineResponse> {
+  const { data } = await api.get(`/claims/${claimId}/timeline`);
+  return data;
+}
+
+export async function getClaimConflicts(claimId: string): Promise<import('../types').ClaimConflictAnalysis> {
+  const { data } = await api.get(`/claims/${claimId}/conflicts`);
+  return data;
+}
+
+export async function submitClaimFeedback(
+  claimId: string,
+  payload: {
+    reviewer_email: string;
+    reviewer_name?: string;
+    decision: 'correct' | 'incorrect' | 'needs_review';
+    explanation?: string;
+    supporting_url?: string;
+  }
+): Promise<import('../types').HumanFeedbackItem> {
+  const { data } = await api.post(`/claims/${claimId}/feedback`, payload);
+  return data;
+}
+
+export async function listClaimFeedback(claimId: string): Promise<import('../types').HumanFeedbackItem[]> {
+  const { data } = await api.get(`/claims/${claimId}/feedback`);
+  return data;
+}
+
+export async function compareVerifications(
+  jobA: string,
+  jobB: string
+): Promise<import('../types').VerificationComparisonResponse> {
+  const { data } = await api.get('/compare', { params: { job_a: jobA, job_b: jobB } });
+  return data;
+}
+
+export async function registerCollabUser(payload: {
+  email: string;
+  password: string;
+  display_name?: string;
+  role: 'admin' | 'reviewer' | 'member';
+}): Promise<import('../types').CollabUserSession> {
+  const { data } = await api.post('/collaboration/users/register', payload);
+  return data;
+}
+
+export async function loginCollabUser(payload: {
+  email: string;
+  password: string;
+}): Promise<import('../types').CollabUserSession> {
+  const { data } = await api.post('/collaboration/login', payload);
+  return data;
+}
+
+export async function shareVerificationReport(
+  jobId: string,
+  token: string,
+  payload: {
+    member_email: string;
+    member_role: 'admin' | 'reviewer' | 'member';
+    assigned_reviewer_email?: string;
+  }
+): Promise<import('../types').SharedReportItem> {
+  const { data } = await api.post(`/collaboration/reports/${jobId}/share`, payload, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return data;
+}
+
+export async function listSharedReports(token: string): Promise<import('../types').SharedReportItem[]> {
+  const { data } = await api.get('/collaboration/reports/shared', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return data;
+}
+
+export async function addReportComment(
+  jobId: string,
+  token: string,
+  payload: {
+    claim_id?: string;
+    comment_type: 'comment' | 'review_note' | 'assignment';
+    content: string;
+  }
+): Promise<import('../types').ReportCommentItem> {
+  const { data } = await api.post(`/collaboration/reports/${jobId}/comments`, payload, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return data;
+}
+
+export async function listReportComments(
+  jobId: string,
+  token: string
+): Promise<import('../types').ReportCommentItem[]> {
+  const { data } = await api.get(`/collaboration/reports/${jobId}/comments`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return data;
+}
+
+export async function listReportAuditLog(
+  jobId: string,
+  token: string
+): Promise<import('../types').AuditLogItem[]> {
+  const { data } = await api.get(`/collaboration/reports/${jobId}/audit-log`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return data;
+}
+
 export default api;

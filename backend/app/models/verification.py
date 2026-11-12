@@ -72,6 +72,8 @@ class VerificationJob(Base):
     # Meta
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     processing_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_stage: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     # Relationships
     user: Mapped[User | None] = relationship("User", back_populates="verification_jobs")
@@ -85,6 +87,10 @@ class VerificationJob(Base):
     )
     history_entries: Mapped[list[VerificationHistory]] = relationship(
         "VerificationHistory", back_populates="verification_job", lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    reports: Mapped[list[VerificationReport]] = relationship(
+        "VerificationReport", back_populates="verification_job", lazy="selectin",
         cascade="all, delete-orphan",
     )
     scheduled_checks: Mapped[list[ScheduledCheck]] = relationship(
@@ -185,6 +191,29 @@ class ScheduledCheck(Base):
 
     def __repr__(self) -> str:
         return f"<ScheduledCheck(id={self.id}, active={self.is_active})>"
+
+
+class VerificationReport(Base):
+    """Persisted verification report snapshot for auditability and export."""
+
+    __tablename__ = "verification_reports"
+
+    verification_job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("verification_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    report_format: Mapped[str] = mapped_column(String(20), nullable=False)
+    report_version: Mapped[str] = mapped_column(String(20), default="2.0.0", nullable=False)
+    payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    verification_job: Mapped[VerificationJob] = relationship(
+        "VerificationJob", back_populates="reports"
+    )
+
+    def __repr__(self) -> str:
+        return f"<VerificationReport(job_id={self.verification_job_id}, format={self.report_format})>"
 
 
 # Forward-ref imports (resolved at mapping time)

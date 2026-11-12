@@ -19,6 +19,18 @@ export const LandingPage: React.FC = () => {
 
           <div className="flex items-center gap-4">
             <Link
+              to="/tour"
+              className="hidden sm:inline-flex items-center text-xs font-semibold text-cyan-300 hover:text-cyan-200 transition-colors"
+            >
+              Judge&apos;s Tour
+            </Link>
+            <Link
+              to="/trust"
+              className="hidden sm:inline-flex items-center text-xs font-medium text-slate-300 hover:text-white transition-colors"
+            >
+              Trust &amp; Security
+            </Link>
+            <Link
               to="/workspace"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all"
             >

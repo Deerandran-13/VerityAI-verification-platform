@@ -15,6 +15,11 @@ import {
   Menu,
   X,
   ExternalLink,
+  Compass,
+  ShieldCheck,
+  GitBranch,
+  GitCompare,
+  Users,
 } from 'lucide-react';
 
 export const MainLayout: React.FC = () => {
@@ -30,6 +35,11 @@ export const MainLayout: React.FC = () => {
     { name: 'Time-Travel', path: '/time-travel', icon: <History className="w-4 h-4" /> },
     { name: 'Analytics', path: '/analytics', icon: <BarChart3 className="w-4 h-4" /> },
     { name: 'History', path: '/history', icon: <Archive className="w-4 h-4" /> },
+    { name: 'Claim Graph', path: '/graph', icon: <GitBranch className="w-4 h-4" /> },
+    { name: 'Compare Runs', path: '/compare', icon: <GitCompare className="w-4 h-4" /> },
+    { name: 'Team Review', path: '/collaborate', icon: <Users className="w-4 h-4" /> },
+    { name: "Judge's Tour", path: '/tour', icon: <Compass className="w-4 h-4" /> },
+    { name: 'Trust & Security', path: '/trust', icon: <ShieldCheck className="w-4 h-4" /> },
     { name: 'Settings', path: '/settings', icon: <Settings className="w-4 h-4" /> },
   ];
 
@@ -176,7 +186,6 @@ export const MainLayout: React.FC = () => {
 
           {/* Genuine Dynamic Service Status Indicators */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Tavily Badge */}
             <div
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono font-medium transition-all ${tavilyStatus.badgeClass}`}
               title={health?.tavily?.message || 'Tavily Search API status'}
@@ -186,7 +195,6 @@ export const MainLayout: React.FC = () => {
               <span>{tavilyStatus.label}</span>
             </div>
 
-            {/* Bifrost Badge */}
             <div
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono font-medium transition-all ${bifrostStatus.badgeClass}`}
               title={health?.bifrost?.message || 'Bifrost AI Gateway status'}

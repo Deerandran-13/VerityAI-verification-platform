@@ -102,6 +102,8 @@ class VerificationOrchestrator:
                 ]
 
             job.total_claims = len(raw_claims)
+            job.progress_percent = 15
+            job.current_stage = f"Extracted {len(raw_claims)} claims; researching live evidence..."
 
             # Global citation extraction (Agent 7)
             global_citations = self.citation_checker.extract_urls_and_references(job.original_text)
@@ -115,7 +117,9 @@ class VerificationOrchestrator:
             confidence_scores: list[float] = []
 
             # 2. Iterate through each extracted claim across agents
-            for claim_data in raw_claims:
+            for claim_idx, claim_data in enumerate(raw_claims):
+                job.progress_percent = min(90, 15 + int(((claim_idx + 1) / max(len(raw_claims), 1)) * 75))
+                job.current_stage = f"Auditing claim {claim_idx + 1} of {len(raw_claims)}"
                 claim_text = claim_data["claim_text"]
                 category = await self.classifier.classify(claim_text)
 
@@ -205,6 +209,8 @@ class VerificationOrchestrator:
                     claim_text=claim_text,
                     original_sentence=claim_data.get("original_sentence", claim_text),
                     position_in_text=claim_data.get("position_in_text", 0),
+                    page_number=claim_data.get("page_number"),
+                    section_title=claim_data.get("section_title"),
                     category=category,
                     is_time_sensitive=claim_data.get("is_time_sensitive", False),
                     is_historical=claim_data.get("is_historical", False),
@@ -218,37 +224,87 @@ class VerificationOrchestrator:
                 db.add(claim)
                 await db.flush()
 
-                # Source Reliability Agent (Agent 10): Save individual evidence items
+                # Source Reliability Agent (Agent 10): Save individual evidence items with Quality & Bias scoring
+                ev_qualities: list[float] = []
+                ev_supp_count = 0
+                ev_contra_count = 0
                 for idx, ev_item in enumerate(deduped_results):
                     url = ev_item.get("url", "")
                     domain = ev_item.get("domain") or urlparse(url).netloc
+                    title = ev_item.get("title", "")
+                    snippet = ev_item.get("content", "")
+                    rel_score = round(ev_item.get("score", 0.90 - idx * 0.05), 2)
+                    pub_dt = self._parse_publication_date(ev_item.get("published_date"))
+
                     reliability_assessment = self.source_reliability.assess_source(
                         url=url,
-                        title=ev_item.get("title", ""),
-                        snippet=ev_item.get("content", ""),
+                        title=title,
+                        snippet=snippet,
                         domain=domain,
                         publication_date=ev_item.get("published_date"),
+                    )
+                    quality_assessment = self.source_reliability.score_evidence_quality(
+                        url=url,
+                        title=title,
+                        snippet=snippet,
+                        domain=domain,
+                        publication_date=pub_dt or ev_item.get("published_date"),
+                        relevance_score=rel_score,
+                        corroboration_count=len(deduped_results),
+                    )
+                    bias_assessment = self.source_reliability.detect_source_bias(
+                        url=url,
+                        title=title,
+                        snippet=snippet,
+                        domain=domain,
                     )
 
                     is_supporting = ev_item.get("is_supporting", verdict in (ClaimStatus.VERIFIED, ClaimStatus.HISTORICALLY_CORRECT))
                     is_contradicting = ev_item.get("is_contradicting", verdict == ClaimStatus.CONTRADICTED)
+                    if is_supporting:
+                        ev_supp_count += 1
+                    if is_contradicting:
+                        ev_contra_count += 1
+                    ev_qualities.append(quality_assessment["quality_score"])
 
                     evidence = Evidence(
                         claim_id=claim.id,
-                        source_title=ev_item.get("title") or f"Source from {domain}",
+                        source_title=title or f"Source from {domain}",
                         source_url=url,
                         source_domain=domain,
-                        publication_date=self._parse_publication_date(ev_item.get("published_date")),
+                        publication_date=pub_dt,
                         retrieval_date=datetime.now(timezone.utc),
-                        content_snippet=ev_item.get("content", "")[:1000],
-                        relevance_score=round(ev_item.get("score", 0.90 - idx * 0.05), 2),
+                        content_snippet=snippet[:1000],
+                        relevance_score=rel_score,
                         is_supporting=is_supporting,
                         is_contradicting=is_contradicting,
                         is_primary_source=reliability_assessment["is_primary"],
                         reliability_score=reliability_assessment["reliability_score"],
+                        quality_score=quality_assessment["quality_score"],
+                        quality_breakdown=quality_assessment["quality_breakdown"],
+                        bias_label=bias_assessment["bias_label"],
+                        bias_confidence=bias_assessment["bias_confidence"],
+                        bias_rationale=bias_assessment["bias_rationale"],
+                        conflict_of_interest=bias_assessment["conflict_of_interest"],
                         search_query=search_query,
                     )
                     db.add(evidence)
+
+                # Uncertainty Quantification (Feature 5)
+                avg_ev_quality = sum(ev_qualities) / len(ev_qualities) if ev_qualities else 0.0
+                uncertainty = self.freshness_engine.quantify_uncertainty(
+                    evidence_count=len(deduped_results),
+                    supporting_count=ev_supp_count,
+                    contradicting_count=ev_contra_count,
+                    avg_quality_score=avg_ev_quality,
+                    model_confidence=confidence_score or 0.0,
+                    has_outdated_signals=(verdict == ClaimStatus.OUTDATED),
+                    is_vague_claim=claim_data.get("is_vague", False),
+                )
+                claim.evidence_strength = uncertainty["evidence_strength"]
+                claim.uncertainty_score = uncertainty["uncertainty_score"]
+                claim.uncertainty_level = uncertainty["uncertainty_level"]
+                claim.uncertainty_reason = uncertainty["uncertainty_reason"]
 
                 # Knowledge Drift Agent (Agent 8): Record ClaimVersion snapshot
                 claim_version = ClaimVersion(
@@ -293,7 +349,27 @@ class VerificationOrchestrator:
                 )
                 db.add(vr)
 
-            # 3. Finalize Job Metrics
+            # 3. Analyze & Persist Claim Relationships (Feature 7)
+            await db.flush()
+            from app.models.collaboration import ClaimRelationship
+            from app.services.intelligence_analyzer import IntelligenceAnalyzer
+
+            await db.refresh(job, attribute_names=["claims"])
+            if len(job.claims) >= 2:
+                analyzer = IntelligenceAnalyzer()
+                for rel in analyzer.analyze_claim_relationships(list(job.claims)):
+                    db.add(
+                        ClaimRelationship(
+                            verification_job_id=job.id,
+                            source_claim_id=rel["source_claim_id"],
+                            target_claim_id=rel["target_claim_id"],
+                            relationship_type=rel["relationship_type"],
+                            confidence=rel["confidence"],
+                            explanation=rel["explanation"],
+                        )
+                    )
+
+            # 4. Finalize Job Metrics
             job.status = JobStatus.COMPLETED
             job.verified_claims = verified_count
             job.outdated_claims = outdated_count
@@ -312,6 +388,8 @@ class VerificationOrchestrator:
 
             elapsed_ms = int((time.time() - start_time) * 1000)
             job.processing_time_ms = elapsed_ms
+            job.progress_percent = 100
+            job.current_stage = "Completed"
             job.updated_at = datetime.now(timezone.utc)
 
             await db.commit()
@@ -321,6 +399,7 @@ class VerificationOrchestrator:
         except Exception as exc:
             logger.error(f"Error during verification for job {job_id}: {exc}", exc_info=True)
             job.status = JobStatus.FAILED
+            job.current_stage = "Failed"
             job.error_message = str(exc)
             await db.commit()
             raise

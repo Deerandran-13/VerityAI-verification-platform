@@ -18,6 +18,8 @@ class ClaimResponse(BaseModel):
     claim_text: str
     original_sentence: str | None = None
     position_in_text: int | None = None
+    page_number: int | None = None
+    section_title: str | None = None
     category: str | None = None
     is_time_sensitive: bool = False
     is_historical: bool = False
@@ -25,6 +27,10 @@ class ClaimResponse(BaseModel):
     status: str | None = None
     freshness_score: float | None = None
     confidence_score: float | None = None
+    evidence_strength: float | None = None
+    uncertainty_score: float | None = None
+    uncertainty_level: str | None = None
+    uncertainty_reason: str | None = None
     explanation: str | None = None
     suggested_correction: str | None = None
     evidence: list[EvidenceResponse] = Field(default_factory=list)

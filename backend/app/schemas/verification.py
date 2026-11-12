@@ -25,6 +25,10 @@ class VerificationRequest(BaseModel):
         default=None,
         description="Target date for time-travel mode",
     )
+    async_mode: bool = Field(
+        default=False,
+        description="If true, execute verification in a background task and return immediately for status polling.",
+    )
 
 
 class UrlVerificationRequest(BaseModel):
@@ -53,6 +57,19 @@ class VerificationSubmitResponse(BaseModel):
     status: str
     message: str
     total_claims: int = 0
+    progress_percent: int = 0
+    current_stage: str | None = None
+
+
+class VerificationStatusResponse(BaseModel):
+    """Lightweight status polling response for async background verification jobs."""
+
+    id: uuid.UUID
+    status: str
+    progress_percent: int = 0
+    current_stage: str | None = None
+    total_claims: int = 0
+    error_message: str | None = None
 
 
 class VerificationResponse(BaseModel):
@@ -74,6 +91,8 @@ class VerificationResponse(BaseModel):
     unsupported_claims: int = 0
     error_message: str | None = None
     processing_time_ms: int | None = None
+    progress_percent: int = 0
+    current_stage: str | None = None
     claims: list[ClaimResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

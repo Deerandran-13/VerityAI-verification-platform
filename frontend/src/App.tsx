@@ -10,6 +10,11 @@ import { TimeTravelVerification } from './pages/TimeTravelVerification';
 import { AnalyticsDashboard } from './pages/AnalyticsDashboard';
 import { VerificationHistory } from './pages/VerificationHistory';
 import { Settings } from './pages/Settings';
+import { JudgesTour } from './pages/JudgesTour';
+import { TrustSecurity } from './pages/TrustSecurity';
+import { ClaimGraphPage } from './pages/ClaimGraphPage';
+import { VerificationComparePage } from './pages/VerificationComparePage';
+import { CollaborationPage } from './pages/CollaborationPage';
 
 export const App: React.FC = () => {
   return (
@@ -27,7 +32,12 @@ export const App: React.FC = () => {
           <Route path="/time-travel" element={<TimeTravelVerification />} />
           <Route path="/analytics" element={<AnalyticsDashboard />} />
           <Route path="/history" element={<VerificationHistory />} />
+          <Route path="/graph" element={<ClaimGraphPage />} />
+          <Route path="/compare" element={<VerificationComparePage />} />
+          <Route path="/collaborate" element={<CollaborationPage />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/tour" element={<JudgesTour />} />
+          <Route path="/trust" element={<TrustSecurity />} />
         </Route>
 
         {/* Fallback */}

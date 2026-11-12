@@ -4,17 +4,17 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.database import get_db
-from app.core.security import sanitize_input
+from app.core.database import active_session_factory, get_db
+from app.core.security import detect_and_sanitize_prompt_injection, sanitize_input, verify_api_auth
 from app.models.claim import Claim
 from app.models.evidence import Evidence
-from app.models.verification import JobStatus, VerificationJob, VerificationMode
+from app.models.verification import JobStatus, VerificationJob, VerificationMode, VerificationReport
 from app.schemas.claim import ClaimResponse
 from app.schemas.evidence import EvidenceResponse
 from app.schemas.verification import (
@@ -22,6 +22,7 @@ from app.schemas.verification import (
     UrlVerificationRequest,
     VerificationRequest,
     VerificationResponse,
+    VerificationStatusResponse,
     VerificationSubmitResponse,
 )
 from app.services.document_extractor import DocumentExtractorService
@@ -33,6 +34,17 @@ router = APIRouter(tags=["verification"])
 orchestrator = VerificationOrchestrator()
 
 
+async def _run_verification_background(job_id: uuid.UUID) -> None:
+    """Execute verification pipeline in a dedicated background DB session."""
+    if active_session_factory is None:
+        return
+    async with active_session_factory() as bg_db:
+        try:
+            await orchestrator.execute_verification(job_id, bg_db)
+        except Exception as exc:
+            logger.error(f"Background verification failed for job {job_id}: {exc}", exc_info=True)
+
+
 @router.post(
     "/verify",
     response_model=VerificationSubmitResponse,
@@ -42,10 +54,13 @@ orchestrator = VerificationOrchestrator()
 )
 async def submit_verification(
     request: VerificationRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    _identity: str = Depends(verify_api_auth),
 ) -> VerificationSubmitResponse:
     """Submit AI-generated text and execute complete verification pipeline."""
     sanitized_text = sanitize_input(request.text)
+    sanitized_text, _injection_flags = detect_and_sanitize_prompt_injection(sanitized_text)
 
     try:
         mode = VerificationMode(request.mode)
@@ -60,6 +75,8 @@ async def submit_verification(
         mode=mode,
         historical_date=request.historical_date,
         status=JobStatus.PENDING,
+        progress_percent=0,
+        current_stage="Queued" if request.async_mode else "Initializing",
         total_claims=0,
         verified_claims=0,
         outdated_claims=0,
@@ -70,7 +87,18 @@ async def submit_verification(
     await db.commit()
     await db.refresh(job)
 
-    # Execute verification pipeline immediately
+    if request.async_mode:
+        background_tasks.add_task(_run_verification_background, job.id)
+        return VerificationSubmitResponse(
+            id=job.id,
+            status=job.status.value,
+            message="Verification queued for asynchronous background execution.",
+            total_claims=0,
+            progress_percent=0,
+            current_stage="Queued",
+        )
+
+    # Execute verification pipeline synchronously
     try:
         completed_job = await orchestrator.execute_verification(job.id, db)
         return VerificationSubmitResponse(
@@ -78,16 +106,46 @@ async def submit_verification(
             status=completed_job.status.value,
             message=f"Verification completed: {completed_job.total_claims} claims audited with live evidence.",
             total_claims=completed_job.total_claims,
+            progress_percent=completed_job.progress_percent,
+            current_stage=completed_job.current_stage,
         )
     except Exception as exc:
         logger.error(f"Verification pipeline failed for job {job.id}: {exc}", exc_info=True)
-        # Even if partial error, return job id so user can view status
         return VerificationSubmitResponse(
             id=job.id,
             status="failed",
             message=f"Verification encountered an error: {str(exc)}",
             total_claims=0,
+            progress_percent=job.progress_percent,
+            current_stage="Failed",
         )
+
+
+@router.get(
+    "/verify/{job_id}/status",
+    response_model=VerificationStatusResponse,
+    summary="Poll verification job progress and stage",
+)
+async def get_verification_status(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _identity: str = Depends(verify_api_auth),
+) -> VerificationStatusResponse:
+    res = await db.execute(select(VerificationJob).where(VerificationJob.id == job_id))
+    job = res.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Verification job {job_id} not found",
+        )
+    return VerificationStatusResponse(
+        id=job.id,
+        status=job.status.value,
+        progress_percent=job.progress_percent,
+        current_stage=job.current_stage,
+        total_claims=job.total_claims,
+        error_message=job.error_message,
+    )
 
 
 @router.get(
@@ -134,6 +192,12 @@ async def get_verification(
                 is_contradicting=ev.is_contradicting,
                 is_primary_source=ev.is_primary_source,
                 reliability_score=ev.reliability_score,
+                quality_score=ev.quality_score,
+                quality_breakdown=ev.quality_breakdown,
+                bias_label=ev.bias_label,
+                bias_confidence=ev.bias_confidence,
+                bias_rationale=ev.bias_rationale,
+                conflict_of_interest=ev.conflict_of_interest,
                 search_query=ev.search_query,
                 created_at=ev.created_at,
             )
@@ -146,6 +210,8 @@ async def get_verification(
                 claim_text=c.claim_text,
                 original_sentence=c.original_sentence,
                 position_in_text=c.position_in_text,
+                page_number=c.page_number,
+                section_title=c.section_title,
                 category=c.category.value if c.category else None,
                 is_time_sensitive=c.is_time_sensitive,
                 is_historical=c.is_historical,
@@ -153,6 +219,10 @@ async def get_verification(
                 status=c.status.value if c.status else None,
                 freshness_score=c.freshness_score,
                 confidence_score=c.confidence_score,
+                evidence_strength=c.evidence_strength,
+                uncertainty_score=c.uncertainty_score,
+                uncertainty_level=c.uncertainty_level,
+                uncertainty_reason=c.uncertainty_reason,
                 explanation=c.explanation,
                 suggested_correction=c.suggested_correction,
                 evidence=evidence_list,
@@ -176,6 +246,8 @@ async def get_verification(
         unsupported_claims=job.unsupported_claims,
         error_message=job.error_message,
         processing_time_ms=job.processing_time_ms,
+        progress_percent=job.progress_percent,
+        current_stage=job.current_stage,
         claims=claims_response,
         created_at=job.created_at,
         updated_at=job.updated_at,
@@ -185,14 +257,15 @@ async def get_verification(
 @router.get(
     "/verify/{job_id}/export",
     summary="Export comprehensive verification report",
-    description="Export full verification report in JSON or HTML format.",
+    description="Export full verification report in PDF, JSON, HTML, or CSV format and persist report snapshot.",
 )
 async def export_verification_report(
     job_id: uuid.UUID,
     format: str = "json",
     db: AsyncSession = Depends(get_db),
+    _identity: str = Depends(verify_api_auth),
 ):
-    """Generates and exports verification dossier as JSON or standalone HTML."""
+    """Generates, persists, and exports verification dossier as PDF, JSON, HTML, or CSV."""
     from fastapi.responses import HTMLResponse, JSONResponse
 
     stmt = (
@@ -210,7 +283,28 @@ async def export_verification_report(
             detail=f"Verification job {job_id} not found",
         )
 
-    if format.lower() == "html":
+    fmt = format.lower()
+    json_report = orchestrator.report_generator.generate_json_report(job)
+    db.add(
+        VerificationReport(
+            verification_job_id=job.id,
+            report_format=fmt,
+            report_version=json_report.get("verityai_report_version", "2.0.0"),
+            payload_json=json_report,
+        )
+    )
+    await db.commit()
+
+    if fmt == "pdf":
+        pdf_bytes = orchestrator.report_generator.generate_pdf_report(job)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=verityai_report_{job.id}.pdf",
+            },
+        )
+    elif fmt == "html":
         html_content = orchestrator.report_generator.generate_html_report(job)
         return HTMLResponse(
             content=html_content,
@@ -218,7 +312,7 @@ async def export_verification_report(
                 "Content-Disposition": f"attachment; filename=verityai_report_{job.id}.html",
             },
         )
-    elif format.lower() == "csv":
+    elif fmt == "csv":
         csv_content = orchestrator.report_generator.generate_csv_report(job)
         return PlainTextResponse(
             content=csv_content,
@@ -228,7 +322,6 @@ async def export_verification_report(
             },
         )
 
-    json_report = orchestrator.report_generator.generate_json_report(job)
     return JSONResponse(
         content=json_report,
         headers={

@@ -56,9 +56,12 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
-    # Rate Limiting
+    # Rate Limiting & Security
     RATE_LIMIT_PER_MINUTE: int = 30
+    ENABLE_RATE_LIMIT: bool = True
     MAX_REQUEST_SIZE_MB: int = 10
+    REQUIRE_API_AUTH: bool = False
+    PUBLIC_API_KEYS: list[str] = ["verityai-dev-key"]
 
     # Freshness scoring weights
     EVIDENCE_AGREEMENT_WEIGHT: float = 0.45
@@ -70,7 +73,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
 
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("CORS_ORIGINS", "PUBLIC_API_KEYS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Any) -> list[str]:
         if isinstance(v, str):

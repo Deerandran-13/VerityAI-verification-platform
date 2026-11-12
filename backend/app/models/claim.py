@@ -57,6 +57,8 @@ class Claim(Base):
     claim_text: Mapped[str] = mapped_column(Text, nullable=False)
     original_sentence: Mapped[str | None] = mapped_column(Text, nullable=True)
     position_in_text: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     category: Mapped[ClaimCategory | None] = mapped_column(
         Enum(ClaimCategory, name="claim_category", create_constraint=True),
@@ -75,6 +77,10 @@ class Claim(Base):
 
     freshness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    evidence_strength: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uncertainty_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uncertainty_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    uncertainty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_correction: Mapped[str | None] = mapped_column(Text, nullable=True)
 

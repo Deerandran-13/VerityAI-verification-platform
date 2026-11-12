@@ -33,83 +33,120 @@ class ClaimExtractor:
         if not text or not text.strip():
             return []
 
-        # Filter out markdown headers, table separators, and empty lines
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        filtered_lines = [l for l in lines if not l.startswith("#") and not l.startswith("---") and not l.startswith("===")]
-        normalized_text = " ".join(filtered_lines)
+        # Parse page & section markers while preserving line context
+        page_re = re.compile(r"^\[Page\s+(\d+)\]$", re.IGNORECASE)
+        section_re = re.compile(r"^\[Section:\s*(.+?)\]$", re.IGNORECASE)
+        md_heading_re = re.compile(r"^#{1,6}\s+(.+)$")
 
-        raw_sentences = [
-            s.strip()
-            for s in self.sentence_regex.split(normalized_text)
-            if s.strip()
-        ]
+        segments: list[tuple[int | None, str | None, str]] = []
+        current_page: int | None = None
+        current_section: str | None = None
+        buffer: list[str] = []
+
+        def _flush_buffer() -> None:
+            if buffer:
+                segments.append((current_page, current_section, " ".join(buffer)))
+                buffer.clear()
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("---") or line.startswith("==="):
+                continue
+            pm = page_re.match(line)
+            if pm:
+                _flush_buffer()
+                current_page = int(pm.group(1))
+                continue
+            sm = section_re.match(line)
+            if sm:
+                _flush_buffer()
+                current_section = sm.group(1).strip()[:255]
+                continue
+            hm = md_heading_re.match(line)
+            if hm:
+                _flush_buffer()
+                current_section = hm.group(1).strip()[:255]
+                continue
+            buffer.append(line)
+        _flush_buffer()
 
         candidates: list[dict[str, Any]] = []
-        for idx, sentence in enumerate(raw_sentences):
-            # Split compound conjunctions into atomic clauses
-            sub_clauses = re.split(r";|\s+(?:and\s+also|moreover|furthermore)\s+", sentence)
-            for clause in sub_clauses:
-                clause = clause.strip()
-                # Ignore very short or trivial fragments
-                if len(clause) < 15 or len(clause.split()) < 3:
-                    continue
+        global_idx = 0
+        for seg_page, seg_section, seg_text in segments:
+            raw_sentences = [
+                s.strip()
+                for s in self.sentence_regex.split(seg_text)
+                if s.strip()
+            ]
+            for sentence in raw_sentences:
+                idx = global_idx
+                global_idx += 1
+                # Split compound conjunctions into atomic clauses
+                sub_clauses = re.split(r";|\s+(?:and\s+also|moreover|furthermore)\s+", sentence)
+                for clause in sub_clauses:
+                    clause = clause.strip()
+                    # Ignore very short or trivial fragments
+                    if len(clause) < 15 or len(clause.split()) < 3:
+                        continue
 
-                # Detect if subjective opinion
-                is_opinion = any(re.search(pat, clause, re.IGNORECASE) for pat in self.opinion_patterns)
-                if is_opinion:
-                    continue
+                    # Detect if subjective opinion
+                    is_opinion = any(re.search(pat, clause, re.IGNORECASE) for pat in self.opinion_patterns)
+                    if is_opinion:
+                        continue
 
-                # Detect time-sensitivity & historical markers
-                is_time_sensitive = bool(
-                    re.search(
-                        r"\b(currently|today|now|latest|recent|as of|v\d+|\d{4}|active|status|pricing|costs?)\b",
-                        clause,
-                        re.IGNORECASE,
+                    # Detect time-sensitivity & historical markers
+                    is_time_sensitive = bool(
+                        re.search(
+                            r"\b(currently|today|now|latest|recent|as of|v\d+|\d{4}|active|status|pricing|costs?)\b",
+                            clause,
+                            re.IGNORECASE,
+                        )
                     )
-                )
-                is_historical = bool(
-                    re.search(
-                        r"\b(in (?:19|20)\d{2}|released in|founded in|originally|historically|prior to|formerly)\b",
-                        clause,
-                        re.IGNORECASE,
+                    is_historical = bool(
+                        re.search(
+                            r"\b(in (?:19|20)\d{2}|released in|founded in|originally|historically|prior to|formerly)\b",
+                            clause,
+                            re.IGNORECASE,
+                        )
                     )
-                )
-                is_vague = len(clause.split()) < 4 or bool(re.search(r"\b(things|stuff|various|some people)\b", clause, re.IGNORECASE))
+                    is_vague = len(clause.split()) < 4 or bool(re.search(r"\b(things|stuff|various|some people)\b", clause, re.IGNORECASE))
 
-                # Extract dates, versions, numbers
-                dates = self.date_regex.findall(clause)
-                versions = self.version_regex.findall(clause)
-                numbers = self.number_regex.findall(clause)
+                    # Extract dates, versions, numbers
+                    dates = self.date_regex.findall(clause)
+                    versions = self.version_regex.findall(clause)
+                    numbers = self.number_regex.findall(clause)
 
-                # Density scoring for sorting
-                density_score = 0
-                if versions:
-                    density_score += 3
-                if numbers:
-                    density_score += 2
-                if dates:
-                    density_score += 2
-                if is_time_sensitive or is_historical:
-                    density_score += 1
-                if not is_vague:
-                    density_score += 1
+                    # Density scoring for sorting
+                    density_score = 0
+                    if versions:
+                        density_score += 3
+                    if numbers:
+                        density_score += 2
+                    if dates:
+                        density_score += 2
+                    if is_time_sensitive or is_historical:
+                        density_score += 1
+                    if not is_vague:
+                        density_score += 1
 
-                candidates.append(
-                    {
-                        "id": str(uuid.uuid4()),
-                        "claim_text": clause,
-                        "original_sentence": sentence,
-                        "position_in_text": idx,
-                        "is_time_sensitive": is_time_sensitive,
-                        "is_historical": is_historical,
-                        "is_vague": is_vague,
-                        "is_opinion": False,
-                        "dates": list(set(dates)),
-                        "versions": list(set(versions)),
-                        "numbers": list(set(numbers)),
-                        "density_score": density_score,
-                    }
-                )
+                    candidates.append(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "claim_text": clause,
+                            "original_sentence": sentence,
+                            "position_in_text": idx,
+                            "page_number": seg_page,
+                            "section_title": seg_section,
+                            "is_time_sensitive": is_time_sensitive,
+                            "is_historical": is_historical,
+                            "is_vague": is_vague,
+                            "is_opinion": False,
+                            "dates": list(set(dates)),
+                            "versions": list(set(versions)),
+                            "numbers": list(set(numbers)),
+                            "density_score": density_score,
+                        }
+                    )
 
         # Deduplicate candidates with identical text
         seen_texts = set()

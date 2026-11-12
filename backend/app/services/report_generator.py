@@ -47,6 +47,8 @@ class VerificationReportGenerator:
                 "confidence_score": c.confidence_score,
                 "explanation": c.explanation,
                 "suggested_correction": c.suggested_correction,
+                "page_number": getattr(c, "page_number", None),
+                "section_title": getattr(c, "section_title", None),
                 "evidence_count": len(c.evidence_items),
                 "evidence_sources": evidence_data,
             })
@@ -224,3 +226,130 @@ class VerificationReportGenerator:
 </body>
 </html>"""
         return html
+
+    @staticmethod
+    def _pdf_safe(text: Any) -> str:
+        """Convert arbitrary Unicode text to Latin-1 safe string for built-in PDF fonts."""
+        s = str(text or "")
+        replacements = {
+            "\u2014": "-",
+            "\u2013": "-",
+            "\u2018": "'",
+            "\u2019": "'",
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u2022": "*",
+            "\u2192": "->",
+        }
+        for k, v in replacements.items():
+            s = s.replace(k, v)
+        return s.encode("latin-1", "replace").decode("latin-1")
+
+    def generate_pdf_report(self, job: VerificationJob) -> bytes:
+        """Generates a structured, downloadable PDF verification report using fpdf2."""
+        from fpdf import FPDF
+        from fpdf.enums import XPos, YPos
+
+        report = self.generate_json_report(job)
+        summary = report["job_summary"]
+        claims = report["audited_claims"]
+
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+
+        # Title Banner
+        pdf.set_fill_color(17, 24, 39)
+        pdf.rect(10, 10, 190, 24, "F")
+        pdf.set_xy(14, 14)
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(56, 189, 248)
+        pdf.cell(0, 8, "VerityAI Verification Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_x(14)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(203, 213, 225)
+        pdf.cell(
+            0,
+            6,
+            self._pdf_safe(
+                f"Report ID: {summary['id']} | Mode: {summary['mode']} | Generated: {report['generated_at']}"
+            ),
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
+
+        pdf.ln(8)
+        pdf.set_x(pdf.l_margin)
+        pdf.set_text_color(15, 23, 42)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "Executive Summary", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(
+            0,
+            6,
+            self._pdf_safe(
+                f"Overall Freshness: {summary['overall_freshness_score']}%   |   "
+                f"Confidence: {summary['overall_confidence_score']}%   |   "
+                f"Total Claims: {summary['total_claims']}   |   "
+                f"Processing: {summary['processing_time_ms']}ms"
+            ),
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
+        pdf.cell(
+            0,
+            6,
+            self._pdf_safe(
+                f"Verified: {summary['verified_claims']} | Outdated: {summary['outdated_claims']} | "
+                f"Contradicted: {summary['contradicted_claims']} | Unsupported: {summary['unsupported_claims']}"
+            ),
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
+
+        pdf.ln(5)
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "Audited Claims & Evidence", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        for idx, c in enumerate(claims, start=1):
+            pdf.ln(2)
+            pdf.set_x(pdf.l_margin)
+            loc_parts = []
+            if c.get("page_number"):
+                loc_parts.append(f"Page {c['page_number']}")
+            if c.get("section_title"):
+                loc_parts.append(f"Section: {c['section_title']}")
+            loc_str = f" ({', '.join(loc_parts)})" if loc_parts else ""
+
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(30, 58, 138)
+            pdf.multi_cell(
+                pdf.epw,
+                5,
+                self._pdf_safe(
+                    f"{idx}. [{str(c['verdict']).upper()}] ({c['category']}){loc_str} "
+                    f"- Freshness: {c['freshness_score']}% | Confidence: {c['confidence_score']}%"
+                ),
+            )
+            pdf.set_x(pdf.l_margin)
+            pdf.set_text_color(15, 23, 42)
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.multi_cell(pdf.epw, 5, self._pdf_safe(f"Claim: {c['claim_text']}"))
+            if c.get("explanation"):
+                pdf.set_x(pdf.l_margin)
+                pdf.set_font("Helvetica", "", 9)
+                pdf.multi_cell(pdf.epw, 4.5, self._pdf_safe(f"Explanation: {c['explanation']}"))
+            if c.get("suggested_correction"):
+                pdf.set_x(pdf.l_margin)
+                pdf.set_font("Helvetica", "I", 9)
+                pdf.multi_cell(pdf.epw, 4.5, self._pdf_safe(f"Correction: {c['suggested_correction']}"))
+            for ev in c.get("evidence_sources", [])[:2]:
+                pdf.set_x(pdf.l_margin)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.set_text_color(71, 85, 105)
+                pdf.multi_cell(pdf.epw, 4, self._pdf_safe(f"  - Source: {ev.get('title')} ({ev.get('url')})"))
+                pdf.set_text_color(15, 23, 42)
+
+        raw = pdf.output()
+        return bytes(raw) if isinstance(raw, (bytes, bytearray)) else raw.encode("latin-1")

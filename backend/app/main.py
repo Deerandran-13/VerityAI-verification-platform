@@ -8,10 +8,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.routes import (
+    auth,
     claims,
     dashboard,
     health,
     history,
+    intelligence,
     knowledge_drift,
     models_status,
     monitoring,
@@ -19,7 +21,7 @@ from app.api.routes import (
 )
 from app.core.config import settings
 from app.core.database import ensure_tables_exist
-from app.core.security import RequestSizeLimitMiddleware, configure_cors
+from app.core.security import RateLimitMiddleware, RequestSizeLimitMiddleware, configure_cors
 
 logging.basicConfig(
     level=logging.INFO if not settings.DEBUG else logging.DEBUG,
@@ -50,8 +52,10 @@ app = FastAPI(
 # Configure CORS & Security Middlewares
 configure_cors(app)
 app.add_middleware(RequestSizeLimitMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # Include API Routers with /api/v1 prefix
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(verification.router, prefix="/api/v1")
 app.include_router(claims.router, prefix="/api/v1")
@@ -60,6 +64,7 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(models_status.router, prefix="/api/v1")
 app.include_router(knowledge_drift.router, prefix="/api/v1")
 app.include_router(monitoring.router, prefix="/api/v1")
+app.include_router(intelligence.router, prefix="/api/v1")
 
 
 @app.exception_handler(Exception)

@@ -14,7 +14,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -54,6 +54,12 @@ class Evidence(Base):
     is_contradicting: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_primary_source: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reliability_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    bias_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bias_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bias_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    conflict_of_interest: Mapped[str | None] = mapped_column(Text, nullable=True)
     search_query: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships

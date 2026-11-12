@@ -24,5 +24,11 @@ class EvidenceResponse(BaseModel):
     is_contradicting: bool = False
     is_primary_source: bool = False
     reliability_score: float | None = None
+    quality_score: float | None = None
+    quality_breakdown: dict | None = None
+    bias_label: str | None = None
+    bias_confidence: float | None = None
+    bias_rationale: str | None = None
+    conflict_of_interest: str | None = None
     search_query: str | None = None
     created_at: datetime

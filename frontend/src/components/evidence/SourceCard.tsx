@@ -38,6 +38,14 @@ export const SourceCard: React.FC<SourceCardProps> = ({ evidence }) => {
               <ShieldCheck className="w-3 h-3" /> Primary Source
             </span>
           )}
+          {evidence.bias_label && evidence.bias_label !== 'low_or_neutral' && (
+            <span
+              className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium capitalize"
+              title={evidence.bias_rationale || 'Potential bias detected (not auto-rejected)'}
+            >
+              Bias: {evidence.bias_label}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {evidence.publication_date && (
@@ -46,10 +54,20 @@ export const SourceCard: React.FC<SourceCardProps> = ({ evidence }) => {
             </span>
           )}
           <span className="font-semibold text-white">
-            Score: {Math.round(evidence.reliability_score)}/100
+            Quality: {Math.round(evidence.quality_score ?? evidence.reliability_score)}/100
           </span>
         </div>
       </div>
+
+      {evidence.quality_breakdown && (
+        <div className="pt-2 border-t border-slate-800/70 grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-[10px] text-slate-400">
+          <span>Auth: {evidence.quality_breakdown.source_authority ?? '—'}/25</span>
+          <span>Rel: {evidence.quality_breakdown.claim_relevance ?? '—'}/25</span>
+          <span>Recency: {evidence.quality_breakdown.publication_recency ?? '—'}/20</span>
+          <span>Direct: {evidence.quality_breakdown.directness ?? '—'}/15</span>
+          <span>Corrob: {evidence.quality_breakdown.independent_corroboration ?? '—'}/15</span>
+        </div>
+      )}
     </div>
   );
 };
