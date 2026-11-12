@@ -1,255 +1,155 @@
 # VerityAI
 
-## Intelligent AI Information Verification & Freshness Engine
+### Evidence-Driven AI Verification, Freshness & Hallucination Intelligence Platform
 
 > **Don't Just Trust AI. Verify It.**
 
-VerityAI identifies outdated, inaccurate, unsupported, contradictory, and potentially hallucinated claims in LLM-generated answers. It extracts individual factual claims, searches the live web for evidence, and produces comprehensive verification reports with freshness and confidence scores.
+VerityAI audits AI-generated text, uploaded documents (PDF, DOCX, TXT), and live web pages against real-time web evidence. It decomposes responses into atomic claims, gathers primary sources via **Tavily**, cross-verifies them through **Bifrost AI Gateway** (**Gemini 2.5 Flash**), maps claim relationships into an interactive **Claim Dependency Graph**, quantifies uncertainty and source bias, and persists full audit-ready reports.
 
 ---
 
-## 🚀 Features
+## Key Capabilities
 
-### Core Verification
-- **Claim Extraction** — Breaks AI answers into atomic, verifiable claims
-- **Live Web Research** — Uses Tavily for real-time evidence gathering
-- **Multi-Model Verification** — Routes through Bifrost AI Gateway
-- **Freshness Scoring** — Configurable scoring engine with explainable metrics
-- **Confidence Scoring** — Evidence-grounded confidence calculation
+### 1. Multi-Input Verification & Document Mapping
+- **AI Text, Document & URL Inputs** — Paste LLM responses, upload `.pdf`, `.docx`, or `.txt` files, or verify live webpage URLs.
+- **Page & Section Claim Mapping** — Extracts `page_number` and `section_title` metadata from uploaded documents so every claim traces back to its exact location.
+- **Async Processing, Retries & Caching** — Supports synchronous or background `async_mode=true` execution with `GET /api/v1/verify/{job_id}/status` progress polling, bounded timeouts, and persistent database caching.
+- **Verification Modes** — **Standard**, **Adversarial** (actively hunts for counter-evidence), and **Time-Travel** (audits claims against a historical date).
 
-### Unique Innovations
-- **Knowledge Drift Detection** — Tracks how facts change over time
-- **Time-Travel Verification** — Verify claims against historical evidence
-- **Adversarial Verification** — Actively searches for counter-evidence
-- **Hallucination Fingerprinting** — Detects fabricated claims and citations
-- **Citation Integrity Checking** — Validates references and URLs
-- **Multi-Source Consensus** — Compares independent evidence sources
-- **Model Disagreement Analysis** — Cross-validates with multiple AI models
-- **Source Reliability Intelligence** — Evaluates evidence quality
+### 2. Advanced Verification Intelligence (10 Integrated Modules)
+1. **Claim Dependency Graph (`/graph`)** — Interactive graph connecting claim nodes and evidence nodes (`supporting`, `contradicting`, `dependent`, `overlapping`), with click-to-inspect node details and upstream impact propagation alerts.
+2. **Claim Relationship Analysis** — Automatically classifies pairwise claim relationships (`ClaimRelationship`) and highlights downstream claims affected by contradicted or outdated premises.
+3. **Evidence Timeline** — Chronological timeline per claim combining source `publication_date`, `retrieval_date`, and `ClaimVersion` snapshots to highlight fact changes over time.
+4. **5-Factor Evidence Quality Scoring** — Weighted `/100` score (`Source Authority` 25, `Claim Relevance` 25, `Publication Recency` 20, `Directness` 15, `Independent Corroboration` 15), explicitly kept distinct from claim correctness.
+5. **Source Bias Detection** — Identifies commercial, promotional, or institutional bias signals and potential conflicts of interest with rationale (`auto_rejected=false`; never rejects a source on bias alone).
+6. **Uncertainty Quantification** — Separates `confidence_score` (model confidence) from `evidence_strength`, surfaces `uncertainty_level` (`low`/`moderate`/`high`) and `uncertainty_reason`, and recommends `insufficient_evidence` when evidence is scarce, conflicting, or ambiguous.
+7. **Fact Conflict Resolution** — Detects competing supporting vs. contradicting sources, explains why they diverge (dates, specs, definitions), and presents both sides with traceable citations.
+8. **Human Review & Feedback Loop** — Reviewers can log `correct`, `incorrect`, or `needs_review` decisions with rationale and supporting URLs; persisted in `HumanFeedback` + `AuditActivityLog` without ever auto-mutating verdicts.
+9. **Verification Comparison (`/compare`)** — Side-by-side comparison of two verification runs across verdicts, freshness, confidence, and evidence counts (`unchanged`, `newly_supported`, `newly_contradicted`, `newly_outdated`, `added`, `removed`).
+10. **Team Collaboration & RBAC (`/collaborate`)** — Authenticated team accounts (PBKDF2-SHA256 + HS256 JWT), role-based access control (`admin`, `reviewer`, `member`), shared reports, reviewer assignments, comments/review notes, and immutable audit logs.
+
+### 3. Monitoring, Exports, Security & Interactive Tour
+- **Knowledge Drift & Expiry Monitoring** — Tracks time-sensitive claims (`/drift`) and schedules automated expiry checks (`/monitoring/track`, `/monitoring/check-expiries`).
+- **Report Exports** — Export verification dossiers to **PDF**, **HTML**, **CSV**, and **JSON** (`/api/v1/verify/{job_id}/export`).
+- **Security Guardrails (`/trust`)** — SSRF protection on URL fetches, prompt-injection detection & sanitization, per-IP sliding-window rate limiting, request size limits, API key auth, and masked secret diagnostics.
+- **Judge's Tour & Interactive Walkthrough (`/tour`)** — 18-chapter interactive animated product walkthrough with live backend data hydration and synchronized English narration/subtitles.
+- **Chrome Extension (`extension/`)** — Verify highlighted text on any webpage in one click.
 
 ---
 
-## 🛠 Technology Stack
+## Technology Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React, TypeScript, Vite, Tailwind CSS, Recharts, Lucide React |
-| Backend | Python, FastAPI, Pydantic v2, SQLAlchemy 2.0 |
-| Database | PostgreSQL 16 |
-| AI Gateway | Bifrost → Gemini (configurable) |
-| Research | Tavily Search API |
-| Infrastructure | Docker, Docker Compose |
+| **Frontend** | React, TypeScript, Vite, Tailwind CSS, Recharts, Lucide React |
+| **Backend** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0 (Async) |
+| **Database** | SQLite (WAL mode local default) / PostgreSQL 16 |
+| **AI Gateway** | Bifrost AI Gateway (`gemini/gemini-2.5-flash`) |
+| **Web Research** | Tavily Search API |
+| **Testing** | Pytest (29 unit & integration tests), TypeScript (`tsc -b`), Vite build |
 
 ---
 
-## 📦 Quick Start
+## Quick Start
 
-### Prerequisites
-- Node.js 20+
-- Python 3.11+
-- PostgreSQL 16+ (or Docker)
-
-### Option 1: Docker Compose (Recommended)
-
-```bash
-# Clone the repository
-git clone <repo-url>
-cd VerifyAI
-
-# Copy environment file
-cp backend/.env.example backend/.env
-# Edit backend/.env with your API keys
-
-# Start all services
-docker-compose up -d
-
-# Access the application
-# Frontend: http://localhost:5173
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
-```
-
-### Option 2: Local Development
-
-#### Backend
-
+### 1. Backend Setup
 ```bash
 cd backend
-
-# Create virtual environment
 python -m venv .venv
 
-# Activate (Windows)
+# Windows
 .venv\Scripts\activate
-
-# Activate (macOS/Linux)
+# macOS / Linux
 source .venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
-
-# Copy and configure environment
 cp .env.example .env
-# Edit .env with your database URL and API keys
+# Configure TAVILY_API_KEY, BIFROST_BASE_URL, SECRET_KEY, etc. in backend/.env
 
-# Run database migrations
-alembic upgrade head
-
-# Start the backend
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-#### Frontend
+### 2. Bifrost AI Gateway
+```bash
+npx --yes @maximhq/bifrost
+```
 
+### 3. Frontend Setup
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start development server
 npm run dev
 ```
 
-#### Database
-
-```bash
-# Start PostgreSQL with Docker
-docker run -d \
-  --name verityai-db \
-  -e POSTGRES_USER=verityai \
-  -e POSTGRES_PASSWORD=verityai \
-  -e POSTGRES_DB=verityai \
-  -p 5432:5432 \
-  postgres:16-alpine
-```
+Open **http://localhost:5173** (Frontend) and **http://localhost:8000/docs** (Swagger API Docs).
 
 ---
 
-## 🔑 Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL async connection string | Yes |
-| `TAVILY_API_KEY` | Tavily Search API key | Yes (for research) |
-| `BIFROST_API_KEY` | Bifrost AI Gateway key | Yes (for AI verification) |
-| `BIFROST_BASE_URL` | Bifrost API base URL | Yes (for AI verification) |
-| `SECRET_KEY` | Application secret for signing | Yes |
-| `DEBUG` | Enable debug mode | No (default: false) |
-| `CORS_ORIGINS` | Allowed CORS origins (JSON array) | No |
-
-Get API keys:
-- **Tavily**: [tavily.com](https://tavily.com)
-- **Bifrost**: [bifrost.ai](https://bifrost.ai)
-
----
-
-## 📚 API Documentation
-
-Interactive API documentation is available at:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-See [docs/API.md](docs/API.md) for detailed endpoint documentation.
-
-### Key Endpoints
+## Key API Routes (`/api/v1`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/verify` | Submit text for verification |
-| GET | `/api/v1/verify/{id}` | Get verification results |
-| GET | `/api/v1/claims/{id}` | Get claim details with evidence |
-| POST | `/api/v1/claims/{id}/reverify` | Re-verify a specific claim |
-| GET | `/api/v1/history` | List verification history |
-| GET | `/api/v1/dashboard/stats` | Get analytics statistics |
-| GET | `/api/v1/knowledge-drift/{id}` | Get knowledge drift data |
-| GET | `/api/v1/models/status` | Check AI model availability |
-| GET | `/api/v1/health` | Health check |
+| `POST` | `/api/v1/verify` | Submit text/URL/mode for verification (`async_mode` supported) |
+| `POST` | `/api/v1/verify/upload` | Upload PDF, DOCX, or TXT with page/section claim mapping |
+| `GET` | `/api/v1/verify/{job_id}` | Retrieve full verification job, claims, evidence, quality & uncertainty |
+| `GET` | `/api/v1/verify/{job_id}/status` | Poll asynchronous verification progress |
+| `GET` | `/api/v1/verify/{job_id}/export` | Export report (`pdf`, `html`, `csv`, `json`) |
+| `GET` | `/api/v1/verify/{job_id}/graph` | Get interactive Claim Dependency Graph & impact propagation |
+| `GET` | `/api/v1/verify/{job_id}/conflicts` | Detect and compare competing evidence across all claims in a job |
+| `GET` | `/api/v1/compare?job_a=...&job_b=...` | Side-by-side comparison of two verification jobs |
+| `GET` | `/api/v1/claims/{claim_id}/timeline` | Chronological evidence + `ClaimVersion` timeline |
+| `GET` | `/api/v1/claims/{claim_id}/conflicts` | Claim-level fact conflict analysis with citations |
+| `POST` | `/api/v1/claims/{claim_id}/feedback` | Submit human reviewer feedback (audit-logged; never auto-overrides verdict) |
+| `POST` | `/api/v1/collaboration/users/register` | Register collaboration user (`admin`, `reviewer`, `member`) |
+| `POST` | `/api/v1/collaboration/login` | Authenticate and issue JWT |
+| `POST` | `/api/v1/collaboration/reports/{job_id}/share` | Share report & assign reviewer (RBAC-protected) |
+| `POST` | `/api/v1/collaboration/reports/{job_id}/comments` | Add comments or official review notes |
+| `GET` | `/api/v1/collaboration/reports/{job_id}/audit-log` | Retrieve immutable audit activity log |
+| `GET` | `/api/v1/dashboard/stats` | Aggregated verification & freshness analytics |
+| `GET` | `/api/v1/health` | Service health check (Database, Tavily, Bifrost, Gemini) |
+
+See [docs/API.md](docs/API.md) for full request/response documentation.
 
 ---
 
-## 🏗 Project Structure
+## Testing & Verification
 
+```bash
+# Backend test suite (29 unit & integration tests)
+backend\.venv\Scripts\pytest backend/tests -v
+
+# Frontend TypeScript check & production build
+npm --prefix frontend run build
 ```
-VerityAI/
-├── frontend/                  # React + TypeScript + Vite
-│   └── src/
-│       ├── components/        # Reusable UI components
-│       ├── pages/             # Route pages
-│       ├── services/          # API client
-│       ├── hooks/             # Custom React hooks
-│       ├── types/             # TypeScript interfaces
-│       └── layouts/           # Page layouts
-├── backend/                   # Python + FastAPI
+
+---
+
+## Project Structure
+
+```text
+VerifyAI/
+├── backend/
 │   ├── app/
-│   │   ├── api/routes/        # API route handlers
-│   │   ├── core/              # Config, DB, security
-│   │   ├── models/            # SQLAlchemy ORM models
-│   │   ├── schemas/           # Pydantic schemas
-│   │   ├── services/          # Business logic
-│   │   └── workers/           # Background tasks
-│   ├── tests/                 # Automated tests
-│   └── alembic/               # Database migrations
-├── database/                  # DB init scripts
-├── docs/                      # Documentation
-├── docker-compose.yml
+│   │   ├── api/routes/        # verification, claims, intelligence, history, dashboard, monitoring, auth, health
+│   │   ├── core/              # config, database (migrations), security (JWT, rate limit, SSRF, prompt shield)
+│   │   ├── models/            # VerificationJob, Claim, Evidence, Collaboration, AuditActivityLog
+│   │   ├── schemas/           # Pydantic v2 request/response models
+│   │   └── services/          # orchestrator, claim_extractor, tavily, bifrost, freshness, reliability, intelligence_analyzer, report_generator
+│   └── tests/                 # 29 automated pytest unit & integration tests
+├── frontend/
+│   ├── public/                # Pre-rendered 18-chapter MP4 walkthrough (verityai-demo-walkthrough.mp4)
+│   └── src/
+│       ├── components/        # results, evidence, dashboard charts, tour (DemoVideoPlayer), layout
+│       ├── pages/             # Workspace, Results, EvidenceExplorer, ClaimGraph, Compare, Collaboration, Drift, TimeTravel, Analytics, Tour, Trust
+│       ├── services/          # Typed Axios API client
+│       └── types/             # TypeScript interfaces
+├── extension/                 # Chrome Extension for 1-click webpage claim verification
+├── docs/                      # API documentation
 └── README.md
 ```
 
 ---
 
-## 🧪 Testing
-
-```bash
-cd backend
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app --cov-report=html
-
-# Run specific test
-pytest tests/test_health.py -v
-```
-
----
-
-## 📋 Development Phases
-
-- [x] **Phase 1**: Project initialization, frontend, backend, database, dashboard, health endpoint
-- [ ] **Phase 2**: Tavily, Bifrost, and Gemini integrations
-- [ ] **Phase 3**: Claim extraction and classification
-- [ ] **Phase 4**: Live research and evidence collection
-- [ ] **Phase 5**: Verification, contradiction detection, scoring
-- [ ] **Phase 6**: Innovation modules (Drift, Time-Travel, Adversarial, Hallucination)
-- [ ] **Phase 7**: Complete frontend integration
-- [ ] **Phase 8**: Historical tracking, alerts, PDF export, analytics
-- [ ] **Phase 9**: Testing, security, optimization, deployment
-
----
-
-## 🏆 Built For
-
-**Global AI Hackathon** — Theme: AI Agents & Intelligent Systems
-
-Demonstrates practical integration of:
-- **Tavily** — Real-time web research for evidence gathering
-- **Bifrost** — AI Gateway for multi-model verification routing
-
----
-
-## 📄 License
+## License
 
 MIT License
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-

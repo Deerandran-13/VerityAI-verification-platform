@@ -14,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  Download,
 } from 'lucide-react';
 import {
   DEMO_CHAPTERS,
@@ -219,27 +218,6 @@ export const DemoVideoPlayer: React.FC = () => {
     }
   };
 
-  const handleDownloadSrt = () => {
-    const fmtSrt = (sec: number) => {
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = Math.floor(sec % 60);
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},000`;
-    };
-    const srt = DEMO_CHAPTERS.map(
-      (c, i) => `${i + 1}\n${fmtSrt(c.startSec)} --> ${fmtSrt(c.endSec)}\n${c.title}: ${c.narration}\n`
-    ).join('\n');
-    const blob = new Blob([srt], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'verityai-demo-captions.srt';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
   const formatTime = (sec: number) => {
     const s = Math.max(0, Math.floor(sec));
     const m = Math.floor(s / 60);
@@ -409,26 +387,6 @@ export const DemoVideoPlayer: React.FC = () => {
             >
               {voiceEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">{voiceEnabled ? 'Voice On' : 'Voice Off'}</span>
-            </button>
-
-            <a
-              href="/verityai-demo-walkthrough.mp4"
-              download="verityai-demo-walkthrough.mp4"
-              title="Download full 18-chapter walkthrough video (.mp4) with spoken English audio & baked-in captions"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 text-xs font-semibold min-h-[36px]"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download Full Video (MP4)</span>
-            </a>
-
-            <button
-              type="button"
-              onClick={handleDownloadSrt}
-              title="Download synchronized English subtitles (.srt)"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium min-h-[36px]"
-            >
-              <Subtitles className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">.SRT</span>
             </button>
 
             <button
